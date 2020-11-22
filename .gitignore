@@ -1,4 +1,6 @@
-dist
+dist/**/*
 node_modules
 db
-
+b64
+coverage
+mp3

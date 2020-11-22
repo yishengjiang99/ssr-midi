@@ -1,13 +1,10 @@
-/// <reference types="node" />
 export declare class Encoder {
-    bitDepth: number;
-    constructor(bitDepth: number);
-    encode(buffer: Buffer, value: number, index: number): void;
+    bitDepth: any;
+    constructor(bitDepth: any);
+    encode(buffer: any, value: any, index: any): void;
 }
 export declare class Decoder {
-    bitDepth: number;
-    constructor(bitDepth: number);
-    decode(buffer: Buffer, index: number): number;
+    bitDepth: any;
+    constructor(bitDepth: any);
+    decode(buffer: any, index: any): number;
 }
-export declare const decode32: Decoder;
-export declare const decode16: Decoder;

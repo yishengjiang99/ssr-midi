@@ -1,6 +1,15 @@
 "use strict";
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.spawnInputBuffer = exports.combinemp3 = exports.mp3db = exports.ffmpegToBuffer = exports.cspawnToBuffer = exports.castInput = exports.pcm_note_size = void 0;
+exports.combinemp3 = exports.mp3db = exports.ffmpegToBuffer = exports.cspawnToBuffer = exports.castInput = exports.pcm_note_size = void 0;
 const child_process_1 = require("child_process");
 const stream_1 = require("stream");
 const fs_1 = require("fs");
@@ -15,9 +24,8 @@ exports.castInput = () => {
     ff.on("error", console.error);
     return pt;
 };
-const PCMCache = new Map();
-exports.cspawnToBuffer = async (cmd, str, ob) => {
-    await new Promise((resolve, reject) => {
+exports.cspawnToBuffer = (cmd, str, ob) => __awaiter(void 0, void 0, void 0, function* () {
+    yield new Promise((resolve, reject) => {
         const { stdout, stderr } = child_process_1.spawn(cmd, str.split(" "));
         let offset = 0;
         stdout.on("data", (chunk) => {
@@ -34,13 +42,13 @@ exports.cspawnToBuffer = async (cmd, str, ob) => {
         stderr.pipe(process.stdout);
         stdout.on("end", resolve);
     });
-};
+});
 function ffmpegToBuffer(args, ob) {
     exports.cspawnToBuffer(`ffmpeg`, args, ob);
 }
 exports.ffmpegToBuffer = ffmpegToBuffer;
 exports.mp3db = (inst, midi) => path_1.resolve(__dirname, "../db/", inst, `${midi}.mp3`);
-exports.combinemp3 = async (combinedNote, noteCache, format, aoptions) => {
+exports.combinemp3 = (combinedNote, noteCache, format, aoptions) => __awaiter(void 0, void 0, void 0, function* () {
     const cacheKey = combinedNote.midis
         .map((note) => `${note.instrument}${note.midi}`)
         .join("_");
@@ -53,13 +61,7 @@ exports.combinemp3 = async (combinedNote, noteCache, format, aoptions) => {
     const filterStr = `-filter_complex amix=inputs=${combinedNote.midis.length}`;
     const ob = noteCache.malloc(cacheKey);
     const cmd = `-y -hide_banner -loglevel panic ${inputStr} ${filterStr} -t 2 -f ${format} ${aoptions} pipe:1`;
-    await exports.cspawnToBuffer("ffmpeg", cmd, ob);
+    yield exports.cspawnToBuffer("ffmpeg", cmd, ob);
     return ob;
-};
-exports.spawnInputBuffer = (proc, buffer) => {
-    proc.on("error", console.error);
-    const pt = new stream_1.PassThrough();
-    pt.pipe(proc.stdin);
-    pt.write(buffer);
-};
+});
 //# sourceMappingURL=ffmpeg-link.js.map

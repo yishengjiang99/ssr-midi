@@ -1,12 +1,14 @@
 import { execSync, spawn } from "child_process";
 import { existsSync, promises, read, readdirSync } from "fs";
-import { wscat, WsServer } from "grep-wss";
+import { WsServer } from "grep-wss";
 import { IncomingMessage } from "http";
 import { resolve } from "path";
-import { playCSVmidi } from "./midi-buffer-source";
 import { Oscillator } from "./audio-data-source";
 import { keyboardToFreq } from "./soundkeys";
 import { SSRContext } from "./ssrctx";
+import { WsSocket } from "grep-wss/dist/WsSocket";
+import { PassThrough } from "stream";
+import { playMidi } from "./midi-scheduler";
 const midfiles = resolve(__dirname, "../csv");
 
 const files = execSync(`ls ${midfiles}`).toString().split("\n");
@@ -26,8 +28,10 @@ export const RTServer = (config) => {
 
     const onData = (ws: WsSocket, data: Buffer) => {
       const request = data.toString().trim();
+      const pt = new PassThrough();
+      pt.on("data", (d) => ws.write(d));
       if (existsSync(`${midfiles}/${request}`)) {
-        playCSVmidi(ctx, `${midfiles}/${request}`, "");
+        playMidi(ctx, `${midfiles}/${request}`, pt);
       }
 
       if (request.length == 1 && keyboardToFreq(request, 3) >= 0) {

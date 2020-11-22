@@ -7,14 +7,14 @@ class CacheStore {
         this.cache = Buffer.alloc(objectbyteLength * size);
         this.cacheKeys = Array(size).fill("");
         this.n = 0;
+        this.rfd = file;
         this.objectbyteLength = objectbyteLength;
-        if (this.rfd) {
+        if (file && fs_1.existsSync(file + ".cache.keys")) {
             this.cacheKeys = fs_1.readFileSync(file + ".cache.keys")
                 .toString()
                 .split("|");
             this.cache = fs_1.readFileSync(file + ".cache.pcm");
         }
-        this.rfd = file;
     }
     set(key, value) {
         this.cacheKeys[this.n] = key;

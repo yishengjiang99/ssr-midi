@@ -31,14 +31,6 @@ describe("ssrctx", () => {
             chai_1.expect(ctx.playing).false;
             done();
         }, 122);
-        // ctx.on("end", () => {
-        // 	console.log(timediff(process.hrtime(), tick));
-        // 	done();
-        // });
-        // setTimeout(() => {
-        // 	expect(ctx.playing).false;
-        // 	done();
-        // }, 900);
     }).timeout(9000);
     it("parse bitdepth from filename", () => {
         const ctx = ssrctx_1.SSRContext.fromFileName(sampleDir("song-f32le.pcm"));
@@ -59,23 +51,4 @@ describe("ssrctx", () => {
         done();
     });
 });
-// 		const osc = new Oscillator(ctx, { frequency: 440 });
-// 		osc.connect(ctx);
-// 		const writ = new MemoryWritable();
-// 		ctx.connect(writ);
-// 		ctx.start();
-// 		setTimeout(() => {
-// 			expect(writ.data.length).to.equal(9000 / 128);
-// 			ctx.stop();
-// 			done();
-// 		}, 1000);
-// 		// expect(ctx.blockSize).to.equal((2 * 4 * 9000) / 128);
-// 	});
-// 	it("writes signed int16", (done) => {
-// 		const b = Buffer.allocUnsafe(32);
-// 		b.writeInt16LE(255, 0);
-// 		expect(b[0]).to.equal(1 * 0xff);
-// 		done();
-// 	});
-// });
 //# sourceMappingURL=ssrctx.test.js.map

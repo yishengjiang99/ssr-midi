@@ -1,10 +1,11 @@
 import { EventEmitter } from "events";
 import { createWriteStream } from "fs";
-import { PassThrough, Writable } from "stream";
-import { AudioDataSource, FileSource, Oscillator, ScheduledDataSource } from "./audio-data-source";
+import { Duplex, PassThrough, Readable, Writable } from "stream";
+import { AudioDataSource, FileSource } from "./audio-data-source";
 import { wavHeader, readHeader } from "./wav-header";
 
 import { Decoder, Encoder } from "./kodak";
+import { Ffmpegd } from "./ffmpegd";
 type Time = [number, number];
 export const timediff = (t1: Time, t2: Time) => {
   return t1[0] + t1[1] / 1e9 - (t2[0] + t2[1] / 1e9);
@@ -16,22 +17,23 @@ export interface CtxProps {
   fps?: number;
   bitDepth?: number;
 }
-
-//#endregion
-export class SSRContext extends EventEmitter {
+const defaultProps: CtxProps = {
+  nChannels: 2,
+  sampleRate: 44100,
+  bitDepth: 16,
+};
+export class SSRContext extends Duplex {
   encoder: Encoder;
   nChannels: number;
-  playing: boolean;
   sampleRate: number;
   fps: number;
   lastFrame: Time;
-  output: Writable;
   frameNumber: number;
   inputs: AudioDataSource[] = [];
   bitDepth: number;
-  static fromWAVFile = (path: string): SSRContext => {
-    return readHeader(path);
-  };
+  pt: PassThrough;
+  endFrame: number;
+
   static fromFileName = (filename: string): SSRContext => {
     const nChannels = filename.match(/\-ac(\d+)\-/) ? parseInt(filename.match(/\-ac(\d+)\-/)[1]) : 2;
     const sampleRate = (filename.match(/\-ar(\d+)\-/) && parseInt(filename.match(/\-ar(\d+)\-/)[1])) || 44100;
@@ -44,18 +46,15 @@ export class SSRContext extends EventEmitter {
     });
   };
 
-  static defaultProps: CtxProps = {
-    nChannels: 2,
-    sampleRate: 44100,
-    bitDepth: 16,
-  };
-  end: number;
-  decoder: Decoder;
-
-  constructor(props: CtxProps = SSRContext.defaultProps) {
+  static default: SSRContext = new SSRContext(defaultProps);
+  constructor(props: CtxProps = defaultProps) {
     super();
     const { nChannels, sampleRate, fps, bitDepth } = {
-      ...SSRContext.defaultProps,
+      ...{
+        nChannels: 2,
+        sampleRate: 44100,
+        bitDepth: 16,
+      },
       ...props,
     };
     this.nChannels = nChannels;
@@ -64,8 +63,6 @@ export class SSRContext extends EventEmitter {
     this.frameNumber = 0;
     this.bitDepth = bitDepth;
     this.encoder = new Encoder(this.bitDepth);
-    this.decoder = new Decoder(this.bitDepth);
-    this.playing = true;
   }
   get secondsPerFrame() {
     return 1 / this.fps;
@@ -95,29 +92,24 @@ export class SSRContext extends EventEmitter {
         return Int16Array;
     }
   }
-  pump(): boolean {
-    this.lastFrame = process.hrtime();
-    let ok = true;
+
+  pump(): Buffer | null {
     this.frameNumber++;
-    for (let i = 0; i < this.inputSources.length; i++) {
-      const b = this.inputSources[i].pullFrame();
-      b && this.emit("data", b);
-    }
-    return ok;
+
+    this.emit("tick");
+    this.lastFrame = process.hrtime();
+    if (!this.inputSources.length) return null;
+    return this.inputSources[0].pullFrame();
   }
   prepareUpcoming() {
     let newInputs = [];
     const t = this.currentTime;
     for (let i = 0; i < this.inputs.length; i++) {
-      if (this.inputs[i].ended() === false) {
+      if (this.inputs[i].readableEnded === false) {
         newInputs.push(this.inputs[i]);
-        this.inputs[i]?.prepare(t);
       }
     }
     this.inputs = newInputs;
-    if (this.inputs.length === 0) {
-      this.stop(0);
-    }
   }
   get blockSize() {
     return this.samplesPerFrame * this.sampleArray.BYTES_PER_ELEMENT;
@@ -129,42 +121,42 @@ export class SSRContext extends EventEmitter {
     return this.sampleRate * this.nChannels * this.sampleArray.BYTES_PER_ELEMENT;
   }
   connect(destination: Writable) {
-    this.output = destination;
+    this.pipe(destination);
   }
   start = () => {
-    this.playing = true;
-    if (this.output === null) return;
     let that = this;
     this.emit("data", Buffer.from(this.WAVHeader));
-    let timer = setInterval(() => {
-      that.pump();
-      if (!that.playing || (that.end && that.currentTime >= that.end)) {
-        that.stop(0);
-        clearInterval(timer);
-      }
-
-      this.prepareUpcoming();
+    this.emit("readable");
+    setInterval(() => {
+      const buf = that.pump();
+      if (buf) this.emit("data", buf);
+      that.prepareUpcoming();
     }, this.secondsPerFrame);
   };
-  getRms() {}
-
-  stop(second?: number) {
-    if (second === 0) {
-      this.playing = false;
-      this.emit("finish");
-      this.inputs.forEach((input) => input.stop());
+  get format() {
+    return this.bitDepth === 16 ? "s16le" : "f32le";
+  }
+  stop(second: number = 0, cb?: CallableFunction) {
+    if (!second) {
+      this.end(cb);
     } else {
-      this.end = second;
+      setTimeout(() => {
+        this.end(cb);
+      }, second * 1000);
     }
   }
-  run() {
-    while (true) {
-      this.pump();
+  _read(size: number) {
+    this.cork();
+    while (size > 0) {
+      const output = this.pump();
+      if (!output) break;
+      this.push(this.pump());
+      size -= this.blockSize;
     }
+    this.uncork();
   }
 }
-// const ctx = SSRContext.fromFileName("-ac1-s16le");
-// playCSVmidi(ctx, resolve(__dirname, "../csv/midi.csv"));
 
-// ctx.connect(createWriteStream("mid2.wav"));
+// ctx.inputs.push(new FileSource(ctx, { filePath: "midi.wav" }));
+// ctx.pipe(process.stdout);
 // ctx.start();

@@ -7,11 +7,7 @@ const ssrctx_1 = require("./ssrctx");
 const path_1 = require("path");
 const grep_transform_1 = require("grep-transform");
 const fs_1 = require("fs");
-let files = [
-    "synth/440/-ac2-f32le.wav",
-    "synth/440/-ac2-s16le.wav",
-    ...child_process_1.execSync("ls samples/*wav").toString().trim().split(/\s+/),
-];
+let files = ["synth/440/-ac2-f32le.wav", "synth/440/-ac2-s16le.wav", ...child_process_1.execSync("ls samples/*pcm").toString().trim().split(/\s+/)];
 const express = require("express");
 exports.router = express.Router();
 exports.router.use("*", (req, res, next) => {
@@ -91,7 +87,7 @@ exports.router.get("/synth/:freq/:desc.wav", (req, res) => {
     ctx.stop(2);
 });
 exports.router.get("/db/:dir/:file", (req, res) => {
-    const path = path_1.resolve("db", req.params.dir, req.params.file); //, req.url.search["path"]);
+    const path = path_1.resolve("db", req.params.dir, req.params.file);
     res.end(path);
 });
 exports.router.get("/synth/:freq/:desc", (req, res) => {
@@ -110,19 +106,21 @@ exports.router.get("/synth/:freq/:desc", (req, res) => {
     ctx.start();
     ctx.stop(2);
 });
+const fpath = (uri) => path_1.resolve(__dirname, `../../radar/public/${uri}`);
+exports.router.use("/build/:file", (req, res) => {
+    console.log(req.params.file);
+    res.sendFile(fpath("build/" + req.params.file));
+});
 exports.router.use("/", (req, res) => {
     const fpath = path_1.resolve(__dirname, `../../public/${req.url}`);
     res.end(`
 		<html>
 		<head>
-		<style>${fs_1.readFileSync("../public/style.css")}</style>
 		</head>
 		<body>
 		<div id='container'>
 			<div id='menu'>
-				${files
-        .map((f) => `<li><button href='${f}'>${path_1.basename(f)}</button><li>`)
-        .join("")}
+				${files.map((f) => `<li><button href='${f}'>${path_1.basename(f)}</button><li>`).join("")}
 			</div>
 
 			<div id='stdout'></div>
@@ -133,7 +131,8 @@ exports.router.use("/", (req, res) => {
 			<div id='rx1'></div>
 			<div id='rx2'></div>
 		</div>
-		<script src='./build/main.js'>
+    <script type='module'>
+    
 		</script>
 		</body>
 		</html>
@@ -149,6 +148,6 @@ if (require.main === module) {
     app.listen(3000);
     setInterval(() => {
         console.log(process.memoryUsage());
-    }, 2000);
+    }, 20200);
 }
 //# sourceMappingURL=server.js.map

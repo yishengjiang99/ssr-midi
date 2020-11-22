@@ -87,7 +87,9 @@ class BufferSource extends stream_1.Readable {
         this._start = start;
         this._end = end;
         this._getBuffer = getBuffer;
+        console.log(start, end);
     }
+    prepare() { }
     start(when) {
         this._start = when || this.ctx.currentTime;
     }
@@ -95,8 +97,7 @@ class BufferSource extends stream_1.Readable {
         this._end = when || this.ctx.currentTime;
     }
     get active() {
-        return (this.ctx.currentTime <= this._end &&
-            this.ctx.currentTime >= this._start);
+        return this.ctx.currentTime <= this._end && this.ctx.currentTime >= this._start;
     }
     pullFrame() {
         if (!this.active)

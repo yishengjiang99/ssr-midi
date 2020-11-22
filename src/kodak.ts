@@ -40,5 +40,6 @@ export class Decoder {
       default:
         throw new Error("unsupported bitdepth");
     }
+    return 0;
   }
 }

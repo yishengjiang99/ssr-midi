@@ -1,15 +1,13 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.SSRContext = exports.timediff = void 0;
-const stream_1 = require("stream");
+const events_1 = require("events");
 const wav_header_1 = require("./wav-header");
-const Kodak_1 = require("./Kodak");
-const ffmpegd_1 = require("ffmpegd");
+const kodak_1 = require("./kodak");
 exports.timediff = (t1, t2) => {
     return t1[0] + t1[1] / 1e9 - (t2[0] + t2[1] / 1e9);
 };
-//#endregion
-class SSRContext extends stream_1.Readable {
+class SSRContext extends events_1.EventEmitter {
     constructor(props = SSRContext.defaultProps) {
         super();
         this.inputs = [];
@@ -28,19 +26,15 @@ class SSRContext extends stream_1.Readable {
                 this.prepareUpcoming();
             }, this.secondsPerFrame);
         };
-        const { nChannels, sampleRate, fps, bitDepth } = {
-            ...SSRContext.defaultProps,
-            ...props,
-        };
+        const { nChannels, sampleRate, fps, bitDepth } = Object.assign(Object.assign({}, SSRContext.defaultProps), props);
         this.nChannels = nChannels;
         this.sampleRate = sampleRate;
         this.fps = sampleRate / 128;
         this.frameNumber = 0;
         this.bitDepth = bitDepth;
-        this.encoder = new Kodak_1.Encoder(this.bitDepth);
-        this.decoder = new Kodak_1.Decoder(this.bitDepth);
+        this.encoder = new kodak_1.Encoder(this.bitDepth);
+        this.decoder = new kodak_1.Decoder(this.bitDepth);
         this.playing = true;
-        this.ffmpegD = new ffmpegd_1.FfmpegService();
     }
     get secondsPerFrame() {
         return 1 / this.fps;
@@ -75,10 +69,7 @@ class SSRContext extends stream_1.Readable {
         this.frameNumber++;
         for (let i = 0; i < this.inputSources.length; i++) {
             const b = this.inputSources[i].pullFrame();
-            if (!this.send[i]) {
-                this.send[i] = new stream_1.PassThrough();
-            }
-            this.send[i].write(i);
+            b && this.emit("data", b);
         }
         return ok;
     }
@@ -102,12 +93,10 @@ class SSRContext extends stream_1.Readable {
         return this.frameNumber * this.secondsPerFrame;
     }
     get bytesPerSecond() {
-        return (this.sampleRate *
-            this.nChannels *
-            this.sampleArray.BYTES_PER_ELEMENT);
+        return this.sampleRate * this.nChannels * this.sampleArray.BYTES_PER_ELEMENT;
     }
     connect(destination) {
-        this.pipe(destination);
+        this.output = destination;
     }
     getRms() { }
     stop(second) {
@@ -125,20 +114,14 @@ class SSRContext extends stream_1.Readable {
             this.pump();
         }
     }
-    read() {
-    }
 }
 exports.SSRContext = SSRContext;
 SSRContext.fromWAVFile = (path) => {
     return wav_header_1.readHeader(path);
 };
 SSRContext.fromFileName = (filename) => {
-    const nChannels = filename.match(/\-ac(\d+)\-/)
-        ? parseInt(filename.match(/\-ac(\d+)\-/)[1])
-        : 2;
-    const sampleRate = (filename.match(/\-ar(\d+)\-/) &&
-        parseInt(filename.match(/\-ar(\d+)\-/)[1])) ||
-        44100;
+    const nChannels = filename.match(/\-ac(\d+)\-/) ? parseInt(filename.match(/\-ac(\d+)\-/)[1]) : 2;
+    const sampleRate = (filename.match(/\-ar(\d+)\-/) && parseInt(filename.match(/\-ar(\d+)\-/)[1])) || 44100;
     const bitDepth = filename.includes("f32le") ? 32 : 16;
     return new SSRContext({
         sampleRate: sampleRate,

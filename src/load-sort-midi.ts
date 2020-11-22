@@ -1,56 +1,23 @@
 import { Midi, Header, Track } from "@tonejs/midi";
 import { TempoEvent } from "@tonejs/midi/dist/Header";
+import { spawn } from "child_process";
 
 import { EventEmitter } from "events";
-import { readFileSync } from "fs";
+import { createWriteStream, readFileSync } from "fs";
 import { Transform, TransformCallback } from "stream";
 import { CombinedNotes, MidiNote } from ".";
+import { BufferSource } from "./audio-data-source";
 import { combineNotes } from "./combine-notes";
-import { cspawnToBuffer } from "./ffmpeg-link";
+import { castInput, cspawnToBuffer } from "./ffmpeg-link";
+import { ffplay } from "./ffplay";
 import { SSRContext } from "./ssrctx";
-
-class Ticker extends EventEmitter {
-  tick: number = 0;
-  ppq: number = 120;
-  timer: any;
-  header: Header;
-  tempo: TempoEvent;
-  constructor(header: Header) {
-    super();
-    this.header = header;
-    this.ppq = header.ppq;
-    this.tempo = header.tempos.shift()!;
-  }
-  get bpm() {
-    return this.tempo.bpm;
-  }
-  doTick = () => {
-    this.tick += this.ppq / 2;
-    this.emit("tick", this.tick, this.header.ticksToMeasures(this.tick));
-    if (this.tick > this.header.tempos[0].ticks) {
-      //tempoo change
-      this.tempo = this.header.tempos.shift()!;
-    }
-  };
-  resume = () => {
-    let t = this.doTick;
-    this.timer = setInterval(t, 60000 / this.bpm / 2);
-  };
-  stop = () => {
-    this.emit("stop");
-    clearTimeout(this.timer);
-  };
-  step = () => {
-    this.emit("tick", this.tick, this.header.ticksToMeasures(this.tick));
-  };
-}
-
+import { Ticker } from "./ticker";
 export function* midiTrackGenerator(
   tracks: Track[],
   header: Header
 ): Iterator<CombinedNotes[], CombinedNotes[], Error> {
   const stageNextNoteInTrack = (track: Track) => {
-    const tmeasure = header.ticksToMeasures(ticker.tick);
+    const tmeasure = header.ticksToMeasures(ticker.ticks);
     const noteMeasure = header.ticksToMeasures(track.notes[0].ticks);
     return Math.floor(noteMeasure) - tmeasure <= look_ahead_measures;
   };
@@ -82,7 +49,8 @@ export function* midiTrackGenerator(
   donestream();
   return [];
 }
-export const mixNoteTransform = () =>
+
+export const mixNoteTransform = (ctx: SSRContext, midiHeader: Header) =>
   new Transform({
     objectMode: true,
     transform: async (combinedNotes: CombinedNotes, _: BufferEncoding, cb: TransformCallback) => {
@@ -90,72 +58,84 @@ export const mixNoteTransform = () =>
         cb(null, null);
         return;
       }
-      console.log(combinedNotes.start, combinedNotes.end);
+      const startTime = midiHeader.ticksToSeconds(combinedNotes.start);
+      const endTime = midiHeader.ticksToSeconds(combinedNotes.end);
+      const timeDelta = endTime - startTime;
+      const msPerTick = timeDelta / (combinedNotes.end - combinedNotes.start);
+      const byteLength = ctx.bytesPerSecond * timeDelta;
       const inputClause = combinedNotes.midis
         .map((midi) => `-i db/Fatboy_${midi.instrument}/${midi.midi - 21}.mp3`)
         .join(" ");
-      const byteLength = ((combinedNotes.end - combinedNotes.start) / 1000) * ctx.bytesPerSecond;
-      const dtags = [];
-      const delayClause = combinedNotes.midis
-        .filter((m) => m.start != combinedNotes.start)
-        .map((midi) => midi.start - combinedNotes.start)
-        .map((delay, index) => {
-          dtags.push(`[d${index}]`);
+      const delayFilters = [];
+      const filterConnectors = [];
+      for (const idx in combinedNotes.midis) {
+        const midi = combinedNotes.midis[idx];
+        const delay = midi.start - combinedNotes.start;
+        const delayMs = msPerTick * delay;
+        delayFilters.push(`[${idx}:a]adelay=${delayMs},apad=whole_len=${timeDelta}[d${idx}]`);
+        filterConnectors.push(`[d${idx}]`);
+      }
+      const delayClause = delayFilters.join(",");
+      const delayConnectorClause = filterConnectors.join("");
 
-          return `[${index}:a]adelay=${delay},apad=whole_len=${byteLength}[d${index}]`;
-        })
-        .join(",");
-
-      const amix = `amix=inputs=${combinedNotes.midis.length}:dropout_transition=0`;
+      const amix = `amix=inputs=${combinedNotes.midis.length}:duration=longest`;
       const loudnorm = `dynaudnorm`;
-      const filterClause = `-filter_complex ${delayClause},${dtags.join("")}${amix},${loudnorm}`;
-      const settingClause = `-y -hide_banner -loglevel debug`;
+      const filterClause = `-filter_complex ${delayClause},${delayConnectorClause}${amix},${loudnorm}`;
+      const settingClause = `-y -hide_banner -loglevel panic`;
       const aoptions = `-ac ${ctx.nChannels} -ar ${ctx.sampleRate}`;
-      const format = `mp3`;
-      process.stdout.write(`${settingClause} ${inputClause} ${filterClause} ${aoptions} -f ${format} -`);
-      const ob = Buffer.alloc(length);
-      await cspawnToBuffer("ffmpeg", `${settingClause} ${inputClause} ${filterClause} ${aoptions} -f ${format} -`, ob);
+      const format = ctx.format;
+      const ob = Buffer.alloc(byteLength);
+      await cspawnToBuffer(
+        "ffmpeg",
+        `${settingClause} ${inputClause} ${filterClause} ${aoptions} -t ${timeDelta} -f ${format} -`,
+        ob
+      );
       combinedNotes.buffer = ob;
-      cb(null, combineNotes);
+      cb(null, combinedNotes);
     },
   });
 
-const ctx = new SSRContext(SSRContext.defaultProps);
-const look_ahead_measures = 2;
+const ctx = new SSRContext({ sampleRate: 9000, nChannels: 1, bitDepth: 32 });
+const look_ahead_measures = 1;
 const queue: CombinedNotes[] = [];
-const filename = "song.mid";
+const filename = "Bohemian-Rhapsody-1.mid";
+
 const { header, tracks } = new Midi(readFileSync(filename).buffer);
 const ticker = new Ticker(header);
-console.log(header.toJSON());
 const scheduler = midiTrackGenerator(tracks, header);
-const mixer: Transform = mixNoteTransform();
+const mixer: Transform = mixNoteTransform(ctx, header);
+const ready = [];
+const output = process.stdout;
+mixer.once("readable", () => {
+  mixer.pipe(ffplay(ctx));
+});
 
-ticker.on("tick", (tick: number, measure: number) => {
-  console.log(tick);
+ticker.on("tick", (_: number, _2: number) => {
   const { done, value } = scheduler.next();
   if (done) ctx.stop(0);
   value.forEach((v) => {
     queue.push(v);
   });
 
-  if (queue[0] && queue[0].measure - measure <= 3) {
-    console.log(queue.shift());
-
+  if (queue[0]) {
     mixer.write(queue.shift());
   }
 });
-
+//console.log = (a, b, c) => {};
+// ctx.start();
 process.stdin.on("data", (d) => {
-  console.log(d.toString().trim());
+  //console.log(d.toString().trim());
   switch (d.toString().trim()) {
     case "a":
       ticker.stop();
       break;
     case "d":
+      console.log("reume");
       ticker.resume();
       break;
     case "s":
-      ticker.step();
+      ticker.doTick();
+      console.log("ticker:", ticker.tempo, ticker.bpm, ticker.msPerBeat, ticker.ticks);
       break;
   }
 });

@@ -25,12 +25,27 @@ export class CacheStore {
     this.cacheKeys[this.n] = key;
     this.cache.set(value, this.n * this.objectbyteLength);
     this.n++;
+    this.reallocIfNeeded();
   }
   malloc(key: string) {
     this.cacheKeys[this.n] = key;
-    const ret = this.cache.slice(this.n * this.objectbyteLength, this.n * this.objectbyteLength + this.objectbyteLength);
+    const ret = this.cache.slice(
+      this.n * this.objectbyteLength,
+      this.n * this.objectbyteLength + this.objectbyteLength
+    );
     this.n++;
+    this.reallocIfNeeded();
     return ret;
+  }
+  reallocIfNeeded() {
+    if (this.n > 0.78 * this.cacheKeys.length) {
+      let that = this;
+      process.nextTick(() => {
+        const newbuf = Buffer.alloc(that.n * 3);
+        newbuf.set(that.cache, 0);
+        that.cache = newbuf;
+      });
+    }
   }
   read(key: string) {
     for (let i = 0; i < this.n; i++) {

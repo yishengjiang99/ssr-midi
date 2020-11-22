@@ -1,2 +1,2 @@
-// require("./ticker")(3, console.log);
+"use strict";
 //# sourceMappingURL=ticker.test.js.map

@@ -1,10 +1,11 @@
 import { spawn, execSync, ChildProcess } from "child_process";
 import { PassThrough, Writable } from "stream";
 import { Buffer } from "buffer";
-import { unlinkSync } from "fs";
+import { createWriteStream, unlinkSync } from "fs";
 import { resolve } from "path";
 import { CacheStore } from "./flat-cache-store";
 import { MidiNote } from ".";
+import { start } from "repl";
 export type CastFunction = () => Writable;
 export const pcm_note_size = 76216696 / 88;
 export const castInput: CastFunction = () => {
@@ -17,9 +18,10 @@ export const castInput: CastFunction = () => {
   ff.on("error", console.error);
   return pt;
 };
-
+const logfile = createWriteStream("ffcall.log");
 export const cspawnToBuffer = async (cmd: string, str: string, ob: Buffer) => {
   await new Promise((resolve, reject) => {
+    logfile.write("\n" + cmd + " " + str);
     const { stdout, stderr } = spawn(cmd, str.split(" "));
     let offset = 0;
     stdout.on("data", (chunk) => {
@@ -36,6 +38,7 @@ export const cspawnToBuffer = async (cmd: string, str: string, ob: Buffer) => {
     stdout.on("end", resolve);
   });
 };
+
 export function ffmpegToBuffer(args: string, ob: Buffer) {
   cspawnToBuffer(`ffmpeg`, args, ob);
 }
@@ -52,7 +55,7 @@ export const combinemp3 = async (
   noteCache: CacheStore,
   format: string,
   aoptions: string
-): Promise<Buffer | undefined> => {
+): Promise<Buffer> => {
   const cacheKey = combinedNote.midis.map((note) => `${note.instrument}${note.midi}`).join("_");
 
   if (noteCache.cacheKeys.includes(cacheKey)) {
@@ -62,15 +65,16 @@ export const combinemp3 = async (
   const inputStr = combinedNote.midis.map((note) => `-i db/Fatboy_${note.instrument}/${note.midi}.mp3`).join(" ");
   const filterStr = `-filter_complex amix=inputs=${combinedNote.midis.length}`;
   const ob = noteCache.malloc(cacheKey);
-  const cmd = `-y -hide_banner -loglevel panic ${inputStr} ${filterStr} -t 2 -f ${format} ${aoptions} pipe:1`;
+  const cmd = `-y -hide_banner -loglevel panic ${inputStr} ${filterStr} -f ${format} ${aoptions} pipe:1`;
+
   await cspawnToBuffer("ffmpeg", cmd, ob);
 
   return ob;
 };
 
-export const spawnInputBuffer = (proc: ChildProcess, buffer?: Buffer) => {
-  proc.on("error", console.error);
-  const pt = new PassThrough();
-  pt.pipe(proc.stdin);
-  pt.write(buffer);
-};
+// export const spawnInputBuffer = (proc: ChildProcess, buffer?: Buffer) => {
+//   proc.on("error", console.error);
+//   const pt = new PassThrough();
+//   pt.pipe(proc.stdin);
+//   pt.write(buffer);
+// };

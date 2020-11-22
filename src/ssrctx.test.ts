@@ -9,62 +9,59 @@ import { spawn } from "child_process";
 const sampleDir = (filename) => resolve(__dirname, "../samples", filename);
 
 describe("ssrctx", () => {
-	it("sets framerate, bitdepths etc", () => {
-		const ctx = new SSRContext({
-			nChannels: 2,
-			bitDepth: 16,
-			sampleRate: 9000,
-		});
-		expect(ctx.fps).to.equal(ctx.sampleRate / 128);
-		expect(ctx.samplesPerFrame).to.equal(128 * 2);
-		expect(ctx.blockSize).to.equal(
-			ctx.samplesPerFrame * ctx.sampleArray.BYTES_PER_ELEMENT
-		);
-		expect(ctx.currentTime).to.equal(0);
-		ctx.pump();
-		expect(ctx.currentTime).to.equal(ctx.secondsPerFrame);
-	});
-	it("stops on time", (done) => {
-		const ctx = new SSRContext({
-			nChannels: 2,
-			bitDepth: 16,
-			sampleRate: 44100,
-		});
+  it("sets framerate, bitdepths etc", () => {
+    const ctx = new SSRContext({
+      nChannels: 2,
+      bitDepth: 16,
+      sampleRate: 9000,
+    });
+    expect(ctx.fps).to.equal(ctx.sampleRate / 128);
+    expect(ctx.samplesPerFrame).to.equal(128 * 2);
+    expect(ctx.blockSize).to.equal(ctx.samplesPerFrame * ctx.sampleArray.BYTES_PER_ELEMENT);
+    expect(ctx.currentTime).to.equal(0);
+    ctx.pump();
+    expect(ctx.currentTime).to.equal(ctx.secondsPerFrame);
+  });
+  it("stops on time", (done) => {
+    const ctx = new SSRContext({
+      nChannels: 2,
+      bitDepth: 16,
+      sampleRate: 44100,
+    });
+    ctx.stop(0.1);
+    ctx.start();
+    setTimeout(() => {
+      expect(ctx.readableEnded).true;
+      done();
+    }, 422);
 
-		ctx.stop(0.1);
-		ctx.start();
-		setTimeout(() => {
-			expect(ctx.playing).false;
-			done();
-		}, 122);
-
-		// ctx.on("end", () => {
-		// 	console.log(timediff(process.hrtime(), tick));
-		// 	done();
-		// });
-		// setTimeout(() => {
-		// 	expect(ctx.playing).false;
-		// 	done();
-		// }, 900);
-	}).timeout(9000);
-	it("parse bitdepth from filename", () => {
-		const ctx = SSRContext.fromFileName(sampleDir("song-f32le.pcm"));
-		expect(ctx.bitDepth).to.equal(32);
-		expect(ctx.sampleRate).to.equal(SSRContext.defaultProps.sampleRate);
-	});
-	it("writes sufficient amount of data for playback", (done) => {
-		const ctx = new SSRContext({
-			nChannels: 2,
-			bitDepth: 32,
-			sampleRate: 44100,
-		});
-		const fss = new FileSource(ctx, {
-			filePath: sampleDir("song-f32le.pcm"),
-		});
-		fss.connect(ctx);
-		ctx.stop();
-		done();
-	});
+    // ctx.on("end", () => {
+    // 	console.log(timediff(process.hrtime(), tick));
+    // 	done();
+    // });
+    // setTimeout(() => {
+    // 	expect(ctx.playing).false;
+    // 	done();
+    // }, 900);
+  }).timeout(9000);
+  it("parse bitdepth from filename", () => {
+    const ctx = SSRContext.fromFileName(sampleDir("song-f32le.pcm"));
+    expect(ctx.bitDepth).to.equal(32);
+    expect(ctx.sampleRate).to.equal(SSRContext.default.sampleRate);
+  });
+  it("writes sufficient amount of data for playback", (done) => {
+    const ctx = new SSRContext({
+      nChannels: 2,
+      bitDepth: 32,
+      sampleRate: 44100,
+    });
+    const fss = new FileSource(ctx, {
+      filePath: sampleDir("song-f32le.pcm"),
+    });
+    fss.connect(ctx);
+    ctx.stop();
+    done();
+  });
 });
 // 		const osc = new Oscillator(ctx, { frequency: 440 });
 // 		osc.connect(ctx);

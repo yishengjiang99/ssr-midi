@@ -64,6 +64,7 @@ export declare class BufferSource extends Readable implements ScheduledDataSourc
     ctx: SSRContext;
     buffer: Buffer;
     constructor(ctx: SSRContext, props: BufferSourceProps);
+    prepare(): void;
     start(when?: number): void;
     stop(when?: number): void;
     get active(): boolean;

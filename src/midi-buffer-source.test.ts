@@ -1,10 +1,11 @@
 import { expect } from "chai";
 import { createWriteStream } from "fs";
 import { BufferSource } from "./audio-data-source";
-import { execSync } from "child_process";
 import { loadBuffer, parseMidiCSV } from "./midi-buffer-source";
 import { SSRContext } from "./ssrctx";
 import { PassThrough } from "stream";
+import { CacheStore } from "./flat-cache-store";
+
 const tickToTime = (t) => t / 1000;
 describe("midi-buffersource", () => {
   const ctx = new SSRContext({
@@ -12,8 +13,9 @@ describe("midi-buffersource", () => {
     bitDepth: 16,
     sampleRate: 9000,
   });
+  const initCache = (ctx) => new CacheStore(20, (ctx.bitDepth / 8) * ctx.sampleRate * 2);
   it("it loads buffer from file", async () => {
-    const cache = initCache(ctx);
+    const cache = new CacheStore(20, (ctx.bitDepth / 8) * ctx.sampleRate * 2);
     const buffer = await loadBuffer(ctx, parseMidiCSV("clarinet,67,0.28301699999999996,,256,116"), cache);
     const buffer2 = await loadBuffer(ctx, parseMidiCSV("clarinet,67,0.28301699999999996,,256,116"), cache);
     expect(cache.length).to.equal(1);
@@ -21,14 +23,14 @@ describe("midi-buffersource", () => {
     ctx.stop(0);
   });
   it("makes BufferSource", async () => {
-    const cache = initCache(ctx);
+    const cache = new CacheStore(20, (ctx.bitDepth / 8) * ctx.sampleRate * 2);
 
     const note = parseMidiCSV("clarinet,67,,,0,116");
     await loadBuffer(ctx, note, cache);
     const brs = new BufferSource(ctx, {
       start: tickToTime(note.start),
       end: tickToTime(note.start + note.duration),
-      getBuffer: () => cache.read(`${note.instrument}${note.note}`),
+      getBuffer: () => cache.read(`${note.instrument}${note.midi}`),
     });
     let offset = 0;
     const buffer = brs.pullFrame();
@@ -47,7 +49,7 @@ describe("midi-buffersource", () => {
       bitDepth: 16,
       sampleRate: 9000,
     });
-    const cache = initCache(ctx);
+    const cache = new CacheStore(20, (ctx.bitDepth / 8) * ctx.sampleRate * 2);
 
     loadBuffer(ctx, note, cache).then((buffer) => {
       new BufferSource(ctx, {

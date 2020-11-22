@@ -2,6 +2,7 @@
 import { EventEmitter } from "events";
 import { Writable } from "stream";
 import { AudioDataSource } from "./audio-data-source";
+import { Decoder, Encoder } from "./kodak";
 declare type Time = [number, number];
 export declare const timediff: (t1: Time, t2: Time) => number;
 export interface CtxProps {
@@ -25,6 +26,7 @@ export declare class SSRContext extends EventEmitter {
     static fromFileName: (filename: string) => SSRContext;
     static defaultProps: CtxProps;
     end: number;
+    decoder: Decoder;
     constructor(props?: CtxProps);
     get secondsPerFrame(): number;
     get samplesPerFrame(): number;
@@ -42,10 +44,5 @@ export declare class SSRContext extends EventEmitter {
     getRms(): void;
     stop(second?: number): void;
     run(): void;
-}
-export declare class Encoder {
-    bitDepth: number;
-    constructor(bitDepth: number);
-    encode(buffer: Buffer, value: number, index: number): void;
 }
 export {};

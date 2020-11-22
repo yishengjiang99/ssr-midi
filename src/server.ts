@@ -5,10 +5,14 @@ import { SSRContext } from "./ssrctx";
 import { basename, resolve } from "path";
 import { Application, Request, Response, Router } from "express";
 import { ReadlineTransform, LSGraph, LSSource } from "grep-transform";
-import { existsSync, readFileSync } from "fs";
-import { IncomingMessage } from "http";
+import { existsSync } from "fs";
+import { readHeader, wavHeader } from "./wav-header";
 
-let files = ["synth/440/-ac2-f32le.wav", "synth/440/-ac2-s16le.wav", ...execSync("ls samples/*pcm").toString().trim().split(/\s+/)];
+let files = [
+  "synth/440/-ac2-f32le.wav",
+  "synth/440/-ac2-s16le.wav",
+  ...execSync("ls samples/*pcm").toString().trim().split(/\s+/),
+];
 const express = require("express");
 export const router: Router = express.Router();
 router.use("*", (req, res, next) => {
@@ -53,7 +57,7 @@ router.get("/samples/:filename", (req, res) => {
     return;
   }
 
-  const ctx = SSRContext.fromWAVFile(filename);
+  const ctx = readHeader(filename);
   res.writeHead(200, {
     "Access-Control-Allow-Origin": "*",
     "Content-Type": "audio/x-wav",
@@ -133,7 +137,7 @@ router.use("/", (req: Request, res: Response) => {
 			<div id='rx1'></div>
 			<div id='rx2'></div>
 		</div>
-    <script src='./build/esm/templateUI.js' type='module'>
+    <script type='module'>
     
 		</script>
 		</body>

@@ -4,24 +4,35 @@ import { Readable } from "stream";
 import { EventEmitter } from "events";
 import { start } from "repl";
 
-export interface AudioDataSource {
+export interface AudioDataSource extends Readable {
   ctx: SSRContext;
   active: boolean;
-  // new (ctx: SSRContext, opts: any): AudioDataSource;
   pullFrame: () => Buffer;
-  connect: (destination: SSRContext) => boolean;
-  start: (when?: number) => void;
-  stop: (when?: number) => void;
+  connect?: (destination: SSRContext) => boolean;
   prepare?: (currentTime: number) => void;
-  ended: () => boolean;
+}
+export class BaseAudioSource extends Readable implements AudioDataSource {
+  constructor(ctx: SSRContext) {
+    super();
+    this.ctx = ctx;
+  }
+  ctx: SSRContext;
+  get active() {
+    return true;
+  }
+  pullFrame() {
+    return Buffer.alloc(this.ctx.blockSize).fill(0);
+  }
+  connect(dest: SSRContext) {
+    dest.inputs.push(this);
+    return true;
+  }
+  _read() {
+    this.pullFrame();
+  }
 }
 
-export interface ScheduledDataSource extends AudioDataSource {
-  start: (when?: number) => void;
-  stop: (when?: number) => void;
-}
-
-export class Oscillator implements AudioDataSource {
+export class Oscillator extends Readable implements AudioDataSource {
   ctx: SSRContext;
   frequency: any;
   active: boolean = true;
@@ -35,6 +46,7 @@ export class Oscillator implements AudioDataSource {
       frequency: number;
     }
   ) {
+    super();
     this.ctx = ctx;
     this.frequency = frequency;
     this.bytesPerSample = this.ctx.sampleArray.BYTES_PER_ELEMENT;
@@ -42,6 +54,12 @@ export class Oscillator implements AudioDataSource {
   }
   get header(): Buffer {
     return Buffer.from(this.ctx.WAVHeader);
+  }
+  _read(size: number) {
+    while (size > 0) {
+      this.pullFrame();
+      size -= this.ctx.blockSize;
+    }
   }
   pullFrame(): Buffer {
     if (!this.active) return Buffer.alloc(0);
@@ -54,6 +72,7 @@ export class Oscillator implements AudioDataSource {
       const idx = ~~(i / this.ctx.nChannels);
       this.ctx.encode(frames, Math.sin(phase + cyclePerSample * idx), i);
     }
+    this.emit("data", frames);
     return frames;
   }
   start() {
@@ -72,11 +91,10 @@ export class Oscillator implements AudioDataSource {
   }
 }
 
-export class FileSource extends EventEmitter implements AudioDataSource {
+export class FileSource extends BaseAudioSource {
   offset: number;
   fd: number;
   ctx: SSRContext;
-  active: boolean = true;
   output: Buffer;
   wptr: number;
   _ended: boolean = false;
@@ -90,34 +108,31 @@ export class FileSource extends EventEmitter implements AudioDataSource {
       filePath: string;
     }
   ) {
-    super();
+    super(ctx);
     this.fd = openSync(filePath, "r");
     this.size = statSync(filePath).size;
     this.ctx = ctx;
     this.offset = 0;
   }
-  start: (when?: number) => void;
-  prepare?: (currentTime: number) => void;
-
+  connect(dest: SSRContext) {
+    dest.inputs.push(this);
+    return true;
+  }
+  _read() {
+    this.pullFrame();
+  }
   pullFrame(): Buffer {
     const ob = Buffer.allocUnsafe(this.ctx.blockSize);
     readSync(this.fd, ob, 0, ob.byteLength, this.offset);
     this.offset += ob.byteLength;
     if (this.offset > this.size) {
-      this._ended = true;
-      this.stop();
+      this.emit("end");
     }
+    this.emit("data", ob);
     return ob;
-  }
-  connect(dest: SSRContext) {
-    dest.inputs.push(this);
-    return true;
   }
   stop() {
     closeSync(this.fd);
-  }
-  ended() {
-    return this._ended;
   }
 }
 
@@ -127,7 +142,8 @@ export type BufferSourceProps = {
   start: number;
   end: number;
 };
-export class BufferSource extends Readable implements ScheduledDataSource {
+
+export class BufferSource extends BaseAudioSource {
   _start: number;
   _end: number;
   _getBuffer: () => Buffer;
@@ -135,39 +151,27 @@ export class BufferSource extends Readable implements ScheduledDataSource {
   buffer: Buffer;
 
   constructor(ctx: SSRContext, props: BufferSourceProps) {
-    super();
+    super(ctx);
     this.ctx = ctx;
     this.buffer = props.buffer;
     const { getBuffer, start, end } = props;
     this._start = start;
     this._end = end;
     this._getBuffer = getBuffer;
-    console.log(start, end);
-  }
-  prepare() {}
-  start(when?: number) {
-    this._start = when || this.ctx.currentTime;
-  }
-  stop(when?: number) {
-    this._end = when || this.ctx.currentTime;
   }
 
   get active(): boolean {
-    return this.ctx.currentTime <= this._end && this.ctx.currentTime >= this._start;
+    return this.ctx.currentTime >= this._start;
   }
+
   pullFrame(): Buffer {
-    if (!this.active) return Buffer.alloc(0);
-    if (!this.buffer) this.buffer = this._getBuffer();
+    if (!this.buffer && this._getBuffer) this.buffer = this._getBuffer();
+
     const ret = this.buffer.slice(0, this.ctx.blockSize);
     this.buffer = this.buffer.slice(this.ctx.blockSize);
-    return ret;
+    if (this.buffer.byteLength === 0) {
+      this.destroy();
+      return this.buffer;
+    }
   }
-  connect(dest: SSRContext) {
-    dest.inputs.push(this);
-    return true;
-  }
-  ended() {
-    return this.ctx.currentTime > this._end;
-  }
-  dealloc() {}
 }

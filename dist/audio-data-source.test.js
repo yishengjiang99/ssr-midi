@@ -19,7 +19,6 @@ describe("fileSource", () => {
         chai_1.expect(buff).deep.equal(d);
         ctx.stop();
         done();
-        //	expect(buffer.byteLength).to.equal(ctx.blockSize);
     });
 });
 describe("playaudio", () => {

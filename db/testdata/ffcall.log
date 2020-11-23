@@ -1,0 +1,2 @@
+
+ffmpeg -hide_banner -loglevel error -t 0.28 -i db/Fatboy_clarinet/67.mp3 -f s16le -ac 2 -ar 44100 pipe:1

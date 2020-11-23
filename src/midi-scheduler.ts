@@ -2,33 +2,17 @@ import { Track, Header, Midi } from "@tonejs/midi";
 import { createWriteStream, readFile, readFileSync } from "fs";
 import { MidiNote } from ".";
 import { Readable, Writable } from "stream";
-import { Ticker } from "./ticker";
 import { MidiToScheduledBuffer } from "./midi-transform-buffer";
 import { SSRContext } from "./ssrctx";
-import { AgggregateScheduledBuffer } from "./midi-aggregate-buffer";
-import { ffplay } from "./ffplay";
-import { resolve } from "path";
 
-export async function* midiTrackGenerator2(
-  ctx: SSRContext,
-  tracks: Track[],
-  header: Header
-): AsyncGenerator<MidiNote[], void, Error> {
-  const stageNextNoteInTrack = (track: Track) => {
-    const startTme = header.ticksToSeconds(track.notes[0].ticks);
-    return startTme - ctx.currentTime;
-  };
-
+export async function* g24(ctx: SSRContext, tracks: Track[], header: Header): AsyncGenerator<MidiNote[], void, Error> {
   while (tracks.length) {
-    const staging = [];
-    let minsleep = 11110;
     for (let i = 0; i < tracks.length; i++) {
       if (!tracks[i].notes.length) {
-        tracks = tracks.splice(i, 1);
+        // tracks = tracks.splice(i, 1);
         continue;
       }
-      const nextNote = stageNextNoteInTrack(tracks[i]);
-      if (nextNote < 3) {
+      if (header.ticksToSeconds(tracks[i].notes[0].ticks) - ctx.currentTime < 50) {
         const note = tracks[i].notes.shift();
         if (!note) continue;
         const midinote: MidiNote = {
@@ -42,59 +26,32 @@ export async function* midiTrackGenerator2(
           startTime: header.ticksToSeconds(note.ticks),
           endTime: header.ticksToSeconds(note.ticks + note.durationTicks),
         };
-        staging.push(midinote);
-      } else {
-        minsleep = Math.min(minsleep, nextNote);
+        console.log(midinote.startTime, "vs", ctx.currentTime);
+        yield [midinote];
       }
-    }
-    if (staging.length) yield staging;
-    else {
-      await new Promise((r) => setTimeout(r, minsleep * 1000));
+      await new Promise((resolve) => {
+        // ctx.removeAllListeners("tick");
+        ctx.once("tick", resolve);
+        console.log(ctx.listeners("tick"));
+      });
     }
   }
-
   return;
 }
 
-export const scheduledMidiTracks = (midifile: string, ctx: SSRContext): Readable => {
-  const midi = new Midi(readFileSync(midifile));
-  const ticker = new Ticker(midi.header);
-  const midiSource = midiTrackGenerator2(ctx, midi.tracks, midi.header);
-  const rs = new Readable({
-    read: async () => {
-      const { done, value } = await midiSource.next();
-      if (done) rs.emit("end");
-      if (value) {
-        rs.emit("data", value);
-      }
-    },
-  });
-  ctx.on("tick", async () => {
-    const { done, value } = await midiSource.next();
-    if (done) rs.emit("end");
-    if (value) {
-      rs.emit("data", value);
-    }
-  });
-  return rs;
-};
-
-export async function playMidi(ctx: SSRContext, midifile: string, output: Writable) {
-  scheduledMidiTracks(midifile, ctx).pipe(new MidiToScheduledBuffer(ctx)).pipe(new AgggregateScheduledBuffer(ctx));
-
-  ctx.connect(output);
-  ctx.start();
+export async function playMidi(filename, output, sampleRate = 9000, nChannels = 1): Promise<Readable> {
+  try {
+    const { tracks, header } = new Midi(readFileSync(filename));
+    const ctx = SSRContext.default;
+    ctx.sampleRate = sampleRate;
+    ctx.nChannels = nChannels;
+    const g = g24(ctx, tracks, header);
+    Readable.from(g).pipe(new MidiToScheduledBuffer(ctx)).pipe(ctx.aggregate);
+    // ctx.pipe(createWriteStream("333.wav"));
+    ctx.start();
+    return ctx;
+  } catch (e) {
+    console.error(e);
+  }
 }
-const ctx = SSRContext.default;
-// ctx.start();
-
-// playMidi(ctx, resolve(__dirname, "..", "song.mid"), createWriteStream("gg.wav"));
-const midi = new Midi(readFileSync("song.mid"));
-
-const midiSource = midiTrackGenerator2(ctx, midi.tracks, midi.header);
-(async function () {
-  console.log((await midiSource.next()).value);
-  console.log((await midiSource.next()).value);
-
-  console.log((await midiSource.next()).value);
-})();
+playMidi("./samples/Beethoven-Moonlight-Sonata.mid", 8000, 1);

@@ -11,18 +11,16 @@ export class MidiToScheduledBuffer extends Transform {
   constructor(ctx: SSRContext) {
     super({ objectMode: true });
     this.ctx = ctx;
-    this.noteCache = new CacheStore(100, ctx.bytesPerSecond * 2, ctx.format);
+    this.noteCache = new CacheStore(200, ctx.bytesPerSecond * 3, ctx.format);
   }
-  _transform = async (notes: MidiNote[], _: BufferEncoding, cb: TransformCallback) => {
-    let that = this;
-    for await (const brs of (async function* () {
-      while (notes.length) {
-        const note = notes.shift();
-        note.buffer = await loadBuffer(that.ctx, note, that.noteCache);
-        const srb = new BufferSource(that.ctx, { buffer: note.buffer, start: note.startTime, end: note.endTime });
-        yield srb;
-      }
-    })());
-    cb(null, notes);
+  _transform = async (note: MidiNote, _: BufferEncoding, cb: TransformCallback) => {
+    note.buffer = await loadBuffer(this.ctx, note, this.noteCache);
+    const srb = new BufferSource(this.ctx, { buffer: note.buffer, start: note.startTime, end: note.endTime });
+    this.emit("data", srb);
+    cb(null, null);
+  };
+  _flush = (cb) => {
+    this.noteCache.persist();
+    cb(null, null);
   };
 }

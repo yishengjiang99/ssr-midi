@@ -5,8 +5,12 @@ import { SSRContext } from "./ssrctx";
 import { basename, resolve } from "path";
 import { Application, Request, Response, Router } from "express";
 import { ReadlineTransform, LSGraph, LSSource } from "grep-transform";
-import { existsSync } from "fs";
+import { filterTransform } from "grep-transform/dist/filter-transform";
+
+import { existsSync, readdirSync } from "fs";
 import { readHeader, wavHeader } from "./wav-header";
+import { Transform } from "stream";
+import { playMidi } from "./midi-scheduler";
 
 let files = [
   "synth/440/-ac2-f32le.wav",
@@ -29,27 +33,23 @@ router.get("/r", (req, res: Response) => {
   res.status(200);
   res.contentType("text/html");
 
-  LSSource(resolve(__dirname, "../db"))
+  LSSource(resolve(__dirname, "../.."))
     .pipe(new ReadlineTransform())
-    .pipe(new LSGraph())
+    .pipe(filterTransform({ extname: "csv" }))
+    .pipe(new LSGraph(resolve(__dirname, "../..")))
     .on("data", (d) => {
       res.write(d.toString());
     })
     .on("end", () => res.end());
 });
-export function U32toF32(i) {
-  if (i === 0) return 0;
-  let r = i & ((1 << 23) - 1);
-  1;
-  r /= 1 << 23;
-  r += 1.0;
-  const bias = 127;
-  let shift = ((i >> 23) & 0xff) - bias;
-  for (; shift > 0; shift--) r *= 2;
-  for (; shift < 0; shift++) r /= 2;
-  return r;
-}
 
+router.get("/midi", (req, res) => {
+  res.json(readdirSync(resolve(__dirname, "../samples")).filter((f) => f.endsWith(".mid")));
+});
+router.get("/midi/:file", (req, res) => {
+  const fn = resolve(__dirname, "../samples", req.params.file);
+  playMidi(fn, 8000, 1);
+});
 router.get("/samples/:filename", (req, res) => {
   const filename = resolve(__dirname, "../samples/", req.params.filename);
   if (!existsSync(filename)) {
@@ -117,6 +117,10 @@ router.use("/build/:file", (req: Request, res: Response) => {
   console.log(req.params.file);
   res.sendFile(fpath("build/" + req.params.file));
 });
+router.use("/:file", (req, res) => {
+  const fpath = resolve(__dirname, `../html/${req.params.file}`);
+  res.sendFile(fpath);
+});
 router.use("/", (req: Request, res: Response) => {
   const fpath = resolve(__dirname, `../../public/${req.url}`);
   res.end(`
@@ -124,8 +128,9 @@ router.use("/", (req: Request, res: Response) => {
 		<head>
 		</head>
 		<body>
-		<div id='container'>
-			<div id='menu'>
+    <div id='container'>
+      <div id='menu'>
+        
 				${files.map((f) => `<li><button href='${f}'>${basename(f)}</button><li>`).join("")}
 			</div>
 

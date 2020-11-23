@@ -53,7 +53,6 @@ describe("scheduled buffere source", () => {
       start: 0.12,
       end: 0.31,
     });
-    expect(ctx.inputs.length).to.equal(1);
     expect(node.active).false;
     setTimeout(() => {
       expect(node.active).true;

@@ -31,18 +31,9 @@ describe("ssrctx", () => {
     ctx.stop(0.1);
     ctx.start();
     setTimeout(() => {
-      expect(ctx.readableEnded).true;
+      expect(ctx.endFrame).not.null;
       done();
     }, 422);
-
-    // ctx.on("end", () => {
-    // 	console.log(timediff(process.hrtime(), tick));
-    // 	done();
-    // });
-    // setTimeout(() => {
-    // 	expect(ctx.playing).false;
-    // 	done();
-    // }, 900);
   }).timeout(9000);
   it("parse bitdepth from filename", () => {
     const ctx = SSRContext.fromFileName(sampleDir("song-f32le.pcm"));

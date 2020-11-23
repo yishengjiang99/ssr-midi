@@ -33,8 +33,9 @@ export const loadBuffer = async (ctx: SSRContext, note: MidiNote, noteCache: Cac
       return noteCache.read(cacheKey);
     }
     const ob = Buffer.alloc(ctx.bytesPerSecond * note.duration);
-    const cmd = `-hide_banner -loglevel panic -t ${note.duration} -i ${input} -f ${format} ${aoptions} pipe:1`;
+    const cmd = `-hide_banner -loglevel error -t ${note.duration} -i ${input} -f ${format} ${aoptions} pipe:1`;
     await cspawnToBuffer("ffmpeg", cmd, ob);
+    noteCache.set(cacheKey, ob);
     return ob;
   } catch (e) {
     console.error(e);
@@ -105,15 +106,14 @@ export async function playCsv(ctx: SSRContext, csv: string, outfile: string) {
     while (notes.length && notes[0].startTime - ctx.currentTime < 4) {
       const note = notes.shift();
       const brs = new BufferSource(ctx, {
-        start: note.start,
-        end: note.end,
+        start: note.startTime,
+        end: note.endTime,
         getBuffer: () => noteCache.read(`${note.instrument}${note.midi}`),
       });
       await loadBuffer(ctx, note, noteCache);
       yield brs;
     }
   })()) {
-    ctx.inputs.push(brs);
     if (notes[0].startTime - ctx.currentTime > 4)
       await new Promise((resolve) => {
         ctx.once("tick", resolve);
@@ -122,9 +122,7 @@ export async function playCsv(ctx: SSRContext, csv: string, outfile: string) {
   noteCache.persist();
   const fs = createWriteStream(outfile);
   ctx.connect(fs);
-  ctx.prepareUpcoming();
   ctx.on("data", (d) => {
-    console.log(".");
     fs.write(d);
   });
   ctx.emit("data", Buffer.from(ctx.WAVHeader));

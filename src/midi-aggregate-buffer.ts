@@ -1,43 +1,80 @@
-import { MidiNote } from "./";
+import { TimeFrame } from "./";
 import { Transform } from "stream";
-import { BufferSource } from "./audio-data-source";
+import { AudioDataSource, BaseAudioSource, BufferSource } from "./audio-data-source";
 import { SSRContext } from "./ssrctx";
-
 export class AgggregateScheduledBuffer extends Transform {
   ctx: SSRContext;
-  sources: { [key: string]: BufferSource };
-  id: number = 0;
   active: true;
+  activeSources: Set<BufferSource>;
+  upcoming: BufferSource[][];
+  currentFrameBuffer: [TimeFrame, number, Buffer];
+
   constructor(ctx: SSRContext) {
     super({ objectMode: true });
-
     this.ctx = ctx;
-    this.ctx.inputs.push(this);
+    this.activeSources = new Set<BufferSource>();
+    this.upcoming = new Array(210).fill([]);
+    this.currentFrameBuffer = [ctx._frameNumber, 0, Buffer.alloc(ctx.blockSize)];
+    this.ctx.on("tick", this.handleTick);
   }
+  handleTick = (a, b) => {
+    const newinputs = this.upcoming.shift();
+    newinputs.forEach((sbr: BufferSource) => {
+      this.activeSources.add(sbr);
+      sbr.once("end", () => this.activeSources.delete(sbr));
+    });
+    this.upcoming.push([]);
 
+    const l = this.ctx.blockSize;
+    const g = 1 / this.activeSources.size;
+    const sums = new this.ctx.sampleArray(l).fill(0);
+    for (const sbr of this.activeSources) {
+      const b = sbr.pullFrame();
+      for (let j in b) {
+        sums[j] += b[j] * g;
+      }
+    }
+  };
+  get currentFrame(): [TimeFrame, number, Buffer] {
+    return this.currentFrameBuffer;
+  }
+  set currentFrame(currentFrameBuffer: [TimeFrame, number, Buffer]) {
+    this.currentFrame = currentFrameBuffer;
+  }
+  join(srb: BaseAudioSource) {
+    const startFrame = srb._start / this.ctx.secondsPerFrame;
+    console.log("new join", startFrame, "currentctx ", this.ctx.frameNumber);
+    if (startFrame < this.ctx._frameNumber) {
+      srb._start = this.ctx.currentTime;
+      this.upcoming[0].push(srb);
+    } else {
+      this.upcoming[startFrame - this.ctx.frameNumber].push(srb);
+      console.log(startFrame - this.ctx.frameNumber);
+    }
+  }
   _transform(chunks: BufferSource[], _, cb) {
     chunks.map((srb) => {
       if (!srb.buffer) cb(new Error("no buffer in aggre schedule transform " + srb.toString()));
       else {
-        const id = this.id;
-        this.sources[id] = srb;
-        srb.on("end", () => delete this.sources[id]);
+        const startFrame = srb._start / this.ctx.secondsPerFrame;
+        if (startFrame < this.ctx._frameNumber) {
+          srb._start = this.ctx.currentTime;
+          this.upcoming[0].push(srb);
+        } else {
+          this.upcoming[startFrame - this.ctx._frameNumber].push(srb);
+        }
       }
     });
     cb();
   }
-  pullFrame() {
-    const l = this.ctx.blockSize;
-    const sums = new this.ctx.sampleArray(l).fill(0);
-    const n = this.ctx.blockSize;
-    const activeInputs = Object.values(this.sources).filter((s) => s.active);
-    for (let i = 0; i < activeInputs.length; i++) {
-      const b = activeInputs[i].pullFrame();
-      for (let j in b) {
-        sums[j] += b[j] / activeInputs.length;
-      }
-    }
-    this.emit("data", sums);
-    return Buffer.from(sums);
+
+  pullFrame(): Buffer {
+    return this.currentFrame[2];
+  }
+  _flush(cb) {
+    // const activeInputs = Object.values(this.sources).filter((s) => s.active);
+    // while (this.sources.length) {
+    //   this.emit("data", this.pullFrame());
+    // }
   }
 }

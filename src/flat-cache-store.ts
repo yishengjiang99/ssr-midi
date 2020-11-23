@@ -12,7 +12,6 @@ export class CacheStore {
     this.cacheKeys = Array(size).fill("");
     this.n = 0;
     this.rfd = file;
-
     this.objectbyteLength = objectbyteLength;
     if (file && existsSync(file + ".cache.keys")) {
       this.cacheKeys = readFileSync(file + ".cache.keys")

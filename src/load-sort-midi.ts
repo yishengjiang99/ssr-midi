@@ -101,6 +101,7 @@ const queue: CombinedNotes[] = [];
 const filename = "Bohemian-Rhapsody-1.mid";
 
 const { header, tracks } = new Midi(readFileSync(filename).buffer);
+console.log(tracks[0].notes.map((n) => n.ticks + ":" + n.midi));
 const ticker = new Ticker(header);
 const scheduler = midiTrackGenerator(tracks, header);
 const mixer: Transform = mixNoteTransform(ctx, header);
@@ -111,6 +112,7 @@ mixer.once("readable", () => {
 });
 
 ticker.on("tick", (_: number, _2: number) => {
+  console.log(_2, _, "ontick");
   const { done, value } = scheduler.next();
   if (done) ctx.stop(0);
   value.forEach((v) => {
@@ -122,9 +124,9 @@ ticker.on("tick", (_: number, _2: number) => {
   }
 });
 //console.log = (a, b, c) => {};
-// ctx.start();
+ctx.start();
 process.stdin.on("data", (d) => {
-  //console.log(d.toString().trim());
+  console.log(d.toString().trim());
   switch (d.toString().trim()) {
     case "a":
       ticker.stop();

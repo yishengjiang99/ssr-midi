@@ -6,6 +6,8 @@ import { wavHeader, readHeader } from "./wav-header";
 
 import { Decoder, Encoder } from "./kodak";
 import { Ffmpegd } from "./ffmpegd";
+import { AgggregateScheduledBuffer } from "./midi-aggregate-buffer";
+import { TimeFrame } from ".";
 type Time = [number, number];
 export const timediff = (t1: Time, t2: Time) => {
   return t1[0] + t1[1] / 1e9 - (t2[0] + t2[1] / 1e9);
@@ -22,14 +24,13 @@ const defaultProps: CtxProps = {
   sampleRate: 44100,
   bitDepth: 16,
 };
-export class SSRContext extends Duplex {
+export class SSRContext extends Readable {
   encoder: Encoder;
   nChannels: number;
   sampleRate: number;
   fps: number;
-  lastFrame: Time;
-  frameNumber: number;
-  inputs: AudioDataSource[] = [];
+  _frameNumber: TimeFrame;
+  aggregate: AgggregateScheduledBuffer;
   bitDepth: number;
   pt: PassThrough;
   endFrame: number;
@@ -47,22 +48,21 @@ export class SSRContext extends Duplex {
   };
 
   static default: SSRContext = new SSRContext(defaultProps);
+  timeFrame: number;
   constructor(props: CtxProps = defaultProps) {
     super();
     const { nChannels, sampleRate, fps, bitDepth } = {
-      ...{
-        nChannels: 2,
-        sampleRate: 44100,
-        bitDepth: 16,
-      },
+      ...defaultProps,
       ...props,
     };
     this.nChannels = nChannels;
     this.sampleRate = sampleRate;
-    this.fps = sampleRate / 128;
-    this.frameNumber = 0;
+    this.fps = sampleRate / 128 / 10;
+    this._frameNumber = -50;
     this.bitDepth = bitDepth;
     this.encoder = new Encoder(this.bitDepth);
+    this.aggregate = new AgggregateScheduledBuffer(this);
+    this.aggregate.on("data", (d) => {});
   }
   get secondsPerFrame() {
     return 1 / this.fps;
@@ -70,9 +70,7 @@ export class SSRContext extends Duplex {
   get samplesPerFrame() {
     return (this.sampleRate * this.nChannels) / this.fps;
   }
-  get inputSources() {
-    return this.inputs.filter((i) => i.active);
-  }
+
   get WAVHeader() {
     return wavHeader(30 * this.sampleRate, this.sampleRate, this.nChannels, this.bitDepth);
   }
@@ -92,30 +90,28 @@ export class SSRContext extends Duplex {
         return Int16Array;
     }
   }
-
-  pump(): Buffer | null {
-    this.frameNumber++;
-
-    this.emit("tick");
-    this.lastFrame = process.hrtime();
-    if (!this.inputSources.length) return null;
-    return this.inputSources[0].pullFrame();
+  incFrameNumber() {
+    this._frameNumber += 1;
   }
-  prepareUpcoming() {
-    let newInputs = [];
-    const t = this.currentTime;
-    for (let i = 0; i < this.inputs.length; i++) {
-      if (this.inputs[i].readableEnded === false) {
-        newInputs.push(this.inputs[i]);
-      }
-    }
-    this.inputs = newInputs;
+  get frameNumber() {
+    return this._frameNumber;
+  }
+  pump(): boolean {
+    const [frameN, nInputs, data] = this.aggregate.currentFrame;
+    console.log(
+      frameN,
+      this._frameNumber,
+      nInputs,
+      new Int16Array(data).reduce((sum, v) => (sum += v), 0)
+    );
+    if (frameN === this._frameNumber) this.emit("data", data);
+    return this.push(data, "binary");
   }
   get blockSize() {
     return this.samplesPerFrame * this.sampleArray.BYTES_PER_ELEMENT;
   }
   get currentTime() {
-    return this.frameNumber * this.secondsPerFrame;
+    return this._frameNumber * this.secondsPerFrame;
   }
   get bytesPerSecond() {
     return this.sampleRate * this.nChannels * this.sampleArray.BYTES_PER_ELEMENT;
@@ -125,35 +121,31 @@ export class SSRContext extends Duplex {
   }
   start = () => {
     let that = this;
+    let pushResult = [0, 0];
     this.emit("data", Buffer.from(this.WAVHeader));
-    this.emit("readable");
-    setInterval(() => {
-      const buf = that.pump();
-      if (buf) this.emit("data", buf);
-      that.prepareUpcoming();
+    const t = setInterval(() => {
+      if (that.endFrame == that.frameNumber) {
+        that.emit("end");
+        clearTimeout(t);
+      }
+      const pushOK = that.pump();
+      pushOK ? pushResult[0]++ : pushResult[0]++;
+      that.incFrameNumber();
+      that.emit("tick", that.frameNumber);
     }, this.secondsPerFrame);
   };
   get format() {
     return this.bitDepth === 16 ? "s16le" : "f32le";
   }
-  stop(second: number = 0, cb?: CallableFunction) {
-    if (!second) {
-      this.end(cb);
+  stop(seconds: number = 0, cb?: CallableFunction) {
+    if (!seconds) {
+      this.endFrame = this._frameNumber;
     } else {
-      setTimeout(() => {
-        this.end(cb);
-      }, second * 1000);
+      this.endFrame = this._frameNumber += seconds / this.secondsPerFrame;
     }
   }
   _read(size: number) {
-    this.cork();
-    while (size > 0) {
-      const output = this.pump();
-      if (!output) break;
-      this.push(this.pump());
-      size -= this.blockSize;
-    }
-    this.uncork();
+    // console.trace("_read called " + size);
   }
 }
 

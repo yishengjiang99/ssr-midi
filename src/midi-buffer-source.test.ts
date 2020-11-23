@@ -16,8 +16,9 @@ describe("midi-buffersource", () => {
   const initCache = (ctx) => new CacheStore(20, (ctx.bitDepth / 8) * ctx.sampleRate * 2);
   it("it loads buffer from file", async () => {
     const cache = new CacheStore(20, (ctx.bitDepth / 8) * ctx.sampleRate * 2);
-    const buffer = await loadBuffer(ctx, parseMidiCSV("clarinet,67,0.28301699999999996,,256,116"), cache);
-    const buffer2 = await loadBuffer(ctx, parseMidiCSV("clarinet,67,0.28301699999999996,,256,116"), cache);
+    const buffer = await loadBuffer(ctx, parseMidiCSV("clarinet,67,0.28,0,1"), cache);
+    console.log(cache.cache);
+    const buffer2 = await loadBuffer(ctx, parseMidiCSV("clarinet,67,0.28,0,1"), cache);
     expect(cache.length).to.equal(1);
 
     ctx.stop(0);
@@ -25,7 +26,7 @@ describe("midi-buffersource", () => {
   it("makes BufferSource", async () => {
     const cache = new CacheStore(20, (ctx.bitDepth / 8) * ctx.sampleRate * 2);
 
-    const note = parseMidiCSV("clarinet,67,,,0,116");
+    const note = parseMidiCSV("clarinet,67,0.5,0,0.5"); //,,0,116");
     await loadBuffer(ctx, note, cache);
     const brs = new BufferSource(ctx, {
       start: tickToTime(note.start),

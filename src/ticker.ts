@@ -4,7 +4,12 @@ import { EventEmitter } from "events";
 import e from "express";
 import { readFileSync } from "fs";
 import { parentPort } from "worker_threads";
-const { MessageChannel, markAsUntransferable, Worker, isMainThread } = require("worker_threads");
+const {
+  MessageChannel,
+  markAsUntransferable,
+  Worker,
+  isMainThread,
+} = require("worker_threads");
 const { port1, port2 } = new MessageChannel();
 
 export class Ticker extends EventEmitter {
@@ -44,12 +49,16 @@ export class Ticker extends EventEmitter {
     this.timeSignature = this.header.timeSignatures.shift().timeSignature;
     this.andTwoThreeFour = 0;
   }
+
   updateMetaIfNeeded() {
     let updates = 0x0;
     if (this.header.tempos[0] && this.ticks >= this.header.tempos[0].ticks) {
       this.tempo = this.header.tempos.shift();
     }
-    if (this.header.timeSignatures[0] && this.ticks >= this.header.timeSignatures[0].ticks) {
+    if (
+      this.header.timeSignatures[0] &&
+      this.ticks >= this.header.timeSignatures[0].ticks
+    ) {
       this.timeSignature = this.header.timeSignatures.shift().timeSignature;
       this.andTwoThreeFour = 0;
     }
@@ -85,29 +94,6 @@ export class Ticker extends EventEmitter {
     clearTimeout(this.timer);
   };
 }
-const mid = new Midi(readFileSync("song.mid"));
-const ticker = new Ticker(mid.header);
-if (isMainThread) {
-  // This re-loads the current file inside a Worker instance.
-  const worker = new Worker(__filename);
-  setInterval(() => {
-    worker.postMessage("hi");
-    console.log(worker.performance.eventLoopUtilization());
-  }, 100).unref();
-  const ryan = new EventEmitter();
-  worker.postMessage("start");
-  worker.on("message", (e) => {
-    console.log(e);
-    ryan.emit("tick");
-  });
-} else {
-  ticker.on("beat", (data) => {
-    parentPort.postMessage({ beat: data });
-  });
-  ticker.on("measure", (info) => {
-    parentPort.postMessage({ measure: info });
-  });
-  parentPort.on("message", () => {
-    ticker.doTick();
-  });
-}
+// this.tempo = this.header.tempos.shift();
+// this.timeSignature = this.header.timeSignatures.shift().timeSignature;
+// this.andTwoThreeFour = 0;

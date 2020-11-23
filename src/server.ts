@@ -24,16 +24,11 @@ router.use("*", (req, res, next) => {
   next();
 });
 
-router.use("/mp3", (req, res) => {
-  const files = execSync("ls -R **/*.mp3").toString().trim().split(/\s+/);
-  res.json(files);
-  res.end();
-});
 router.get("/r", (req, res: Response) => {
   res.status(200);
   res.contentType("text/html");
 
-  LSSource(resolve(__dirname, "../.."))
+  LSSource(resolve(__dirname, "db"))
     .pipe(new ReadlineTransform())
     .pipe(filterTransform({ extname: "csv" }))
     .pipe(new LSGraph(resolve(__dirname, "../..")))
@@ -44,11 +39,17 @@ router.get("/r", (req, res: Response) => {
 });
 
 router.get("/midi", (req, res) => {
-  res.json(readdirSync(resolve(__dirname, "../samples")).filter((f) => f.endsWith(".mid")));
+  res.json(
+    readdirSync(resolve(__dirname, "../samples")).filter((f) =>
+      f.endsWith(".mid")
+    )
+  );
 });
 router.get("/midi/:file", (req, res) => {
   const fn = resolve(__dirname, "../samples", req.params.file);
-  playMidi(fn, 8000, 1);
+  playMidi(fn, 8000, 1).then((rs) => {
+    rs.pipe(res);
+  });
 });
 router.get("/samples/:filename", (req, res) => {
   const filename = resolve(__dirname, "../samples/", req.params.filename);
@@ -131,7 +132,9 @@ router.use("/", (req: Request, res: Response) => {
     <div id='container'>
       <div id='menu'>
         
-				${files.map((f) => `<li><button href='${f}'>${basename(f)}</button><li>`).join("")}
+				${files
+          .map((f) => `<li><button href='${f}'>${basename(f)}</button><li>`)
+          .join("")}
 			</div>
 
 			<div id='stdout'></div>

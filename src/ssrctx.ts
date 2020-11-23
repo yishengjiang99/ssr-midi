@@ -8,6 +8,7 @@ import { Decoder, Encoder } from "./kodak";
 import { Ffmpegd } from "./ffmpegd";
 import { AgggregateScheduledBuffer } from "./midi-aggregate-buffer";
 import { TimeFrame } from ".";
+import { Ticker } from "./ticker";
 type Time = [number, number];
 export const timediff = (t1: Time, t2: Time) => {
   return t1[0] + t1[1] / 1e9 - (t2[0] + t2[1] / 1e9);
@@ -36,8 +37,13 @@ export class SSRContext extends Readable {
   endFrame: number;
 
   static fromFileName = (filename: string): SSRContext => {
-    const nChannels = filename.match(/\-ac(\d+)\-/) ? parseInt(filename.match(/\-ac(\d+)\-/)[1]) : 2;
-    const sampleRate = (filename.match(/\-ar(\d+)\-/) && parseInt(filename.match(/\-ar(\d+)\-/)[1])) || 44100;
+    const nChannels = filename.match(/\-ac(\d+)\-/)
+      ? parseInt(filename.match(/\-ac(\d+)\-/)[1])
+      : 2;
+    const sampleRate =
+      (filename.match(/\-ar(\d+)\-/) &&
+        parseInt(filename.match(/\-ar(\d+)\-/)[1])) ||
+      44100;
     const bitDepth = filename.includes("f32le") ? 32 : 16;
     return new SSRContext({
       sampleRate: sampleRate,
@@ -62,22 +68,25 @@ export class SSRContext extends Readable {
     this.bitDepth = bitDepth;
     this.encoder = new Encoder(this.bitDepth);
     this.aggregate = new AgggregateScheduledBuffer(this);
-    this.aggregate.on("data", (d) => {});
-  }
-  get secondsPerFrame() {
-    return 1 / this.fps;
   }
   get samplesPerFrame() {
     return (this.sampleRate * this.nChannels) / this.fps;
   }
 
   get WAVHeader() {
-    return wavHeader(30 * this.sampleRate, this.sampleRate, this.nChannels, this.bitDepth);
+    return wavHeader(
+      30 * this.sampleRate,
+      this.sampleRate,
+      this.nChannels,
+      this.bitDepth
+    );
   }
   encode(buffer: Buffer, value: number, index: number): void {
     this.encoder.encode(buffer, value, index);
   }
-
+  get secondsPerFrame() {
+    return 1 / this.fps;
+  }
   get sampleArray() {
     switch (this.bitDepth) {
       case 32:
@@ -97,13 +106,8 @@ export class SSRContext extends Readable {
     return this._frameNumber;
   }
   pump(): boolean {
-    const [frameN, nInputs, data] = this.aggregate.currentFrame;
-    console.log(
-      frameN,
-      this._frameNumber,
-      nInputs,
-      new Int16Array(data).reduce((sum, v) => (sum += v), 0)
-    );
+    const [frameN, nInputs, data] = this.aggregate.currentFrameBuffer;
+
     if (frameN === this._frameNumber) this.emit("data", data);
     return this.push(data, "binary");
   }
@@ -114,7 +118,9 @@ export class SSRContext extends Readable {
     return this._frameNumber * this.secondsPerFrame;
   }
   get bytesPerSecond() {
-    return this.sampleRate * this.nChannels * this.sampleArray.BYTES_PER_ELEMENT;
+    return (
+      this.sampleRate * this.nChannels * this.sampleArray.BYTES_PER_ELEMENT
+    );
   }
   connect(destination: Writable) {
     this.pipe(destination);
@@ -123,6 +129,7 @@ export class SSRContext extends Readable {
     let that = this;
     let pushResult = [0, 0];
     this.emit("data", Buffer.from(this.WAVHeader));
+    // const ticker = new Ticker();
     const t = setInterval(() => {
       if (that.endFrame == that.frameNumber) {
         that.emit("end");

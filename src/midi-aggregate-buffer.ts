@@ -1,6 +1,10 @@
 import { TimeFrame } from "./";
 import { Transform } from "stream";
-import { AudioDataSource, BaseAudioSource, BufferSource } from "./audio-data-source";
+import {
+  AudioDataSource,
+  BaseAudioSource,
+  BufferSource,
+} from "./audio-data-source";
 import { SSRContext } from "./ssrctx";
 export class AgggregateScheduledBuffer extends Transform {
   ctx: SSRContext;
@@ -14,10 +18,14 @@ export class AgggregateScheduledBuffer extends Transform {
     this.ctx = ctx;
     this.activeSources = new Set<BufferSource>();
     this.upcoming = new Array(210).fill([]);
-    this.currentFrameBuffer = [ctx._frameNumber, 0, Buffer.alloc(ctx.blockSize)];
+    this.currentFrameBuffer = [
+      ctx._frameNumber,
+      0,
+      Buffer.alloc(ctx.blockSize),
+    ];
     this.ctx.on("tick", this.handleTick);
   }
-  handleTick = (a, b) => {
+  handleTick = (frameNumber: TimeFrame) => {
     const newinputs = this.upcoming.shift();
     newinputs.forEach((sbr: BufferSource) => {
       this.activeSources.add(sbr);
@@ -37,16 +45,16 @@ export class AgggregateScheduledBuffer extends Transform {
         sums[j] += b[j] * g;
       }
     }
+    this.currentFrameBuffer = [
+      frameNumber,
+      this.activeSources.size,
+      Buffer.from(sums),
+    ];
   };
-  get currentFrame(): [TimeFrame, number, Buffer] {
-    return this.currentFrameBuffer;
-  }
-  set currentFrame(currentFrameBuffer: [TimeFrame, number, Buffer]) {
-    this.currentFrame = currentFrameBuffer;
-  }
+
   join(srb: BaseAudioSource) {
     const startFrame = srb._start / this.ctx.secondsPerFrame;
-    console.log("new join", srb._start, "currentctx ", this.ctx.frameNumber);
+    console.log("new join", startFrame, "currentctx ", this.ctx.frameNumber);
     if (startFrame < this.ctx._frameNumber) {
       srb._start = this.ctx.currentTime;
       this.upcoming[0].push(srb);
@@ -55,29 +63,23 @@ export class AgggregateScheduledBuffer extends Transform {
       console.log(startFrame - this.ctx.frameNumber);
     }
   }
-  _transform(chunks: BufferSource, _, cb) {
-    [chunks].map((srb) => {
-      if (!srb.buffer) cb(new Error("no buffer in aggre schedule transform " + srb.toString()));
-      else {
-        const startFrame = srb._start / this.ctx.secondsPerFrame;
-        if (startFrame < this.ctx._frameNumber) {
-          srb._start = this.ctx.currentTime;
-          this.upcoming[0].push(srb);
-        } else {
-          this.upcoming[startFrame - this.ctx._frameNumber].push(srb);
-        }
+  _transform(srb: BufferSource, _, cb) {
+    if (!srb.buffer)
+      cb(new Error("no buffer in aggre schedule transform " + srb.toString()));
+    else {
+      const startFrame = srb._start / this.ctx.secondsPerFrame;
+      if (startFrame < this.ctx._frameNumber) {
+        srb._start = this.ctx.currentTime;
+        this.upcoming[0].push(srb);
+      } else {
+        this.upcoming[startFrame - this.ctx._frameNumber].push(srb);
       }
-    });
-    cb();
+      cb();
+    }
   }
 
   pullFrame(): Buffer {
-    return this.currentFrame[2];
+    return this.currentFrameBuffer[2];
   }
-  _flush(cb) {
-    // const activeInputs = Object.values(this.sources).filter((s) => s.active);
-    // while (this.sources.length) {
-    //   this.emit("data", this.pullFrame());
-    // }
-  }
+  _flush(cb) {}
 }

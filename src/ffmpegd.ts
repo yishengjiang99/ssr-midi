@@ -23,7 +23,9 @@ export class Ffmpegd {
     this.monitor = new PassThrough();
     this.output = createReadStream(`/tmp/ffmpegd-output.sock`);
     this.occupied = new Array(this.n).fill(false);
-    execSync("rm -rf /tmp/ffmpegd-output.sock && mkfifo /tmp/ffmpegd-output.sock");
+    execSync(
+      "rm -rf /tmp/ffmpegd-output.sock && mkfifo /tmp/ffmpegd-output.sock"
+    );
     execSync("chmod 760 /tmp/ffmpegd-output.sock");
     const inputClause = `${[0, 1, 2, 3, 4, 5, 6, 7, 8]
       .filter((v) => v < this.n) /* subtractive array synthesis*/
@@ -50,11 +52,10 @@ export class Ffmpegd {
     stderr.on("data", console.error);
   }
   sendFile(idx: number, file: string) {
-    execSync(`rm -rf ${Ffmpegd.ncPath(idx)} && cat ${file} | nc -Ul ${Ffmpegd.ncPath(idx)}`);
+    execSync(
+      `rm -rf ${Ffmpegd.ncPath(idx)} && cat ${file} | nc -Ul ${Ffmpegd.ncPath(
+        idx
+      )}`
+    );
   }
 }
-const g = new Ffmpegd(2, SSRContext.default);
-
-g.sendFile(0, resolve(__dirname, "../db/Fatboy_trumpet/38.mp3"));
-g.sendFile(1, resolve(__dirname, "../db/Fatboy_trumpet/33.mp3"));
-g.run();

@@ -5,8 +5,13 @@ import { Readable, Writable } from "stream";
 import { MidiToScheduledBuffer } from "./midi-transform-buffer";
 import { SSRContext } from "./ssrctx";
 import { Ticker } from "./ticker";
+import { AgggregateScheduledBuffer } from "./midi-aggregate-buffer";
 
-export async function* g24(ticker: Ticker, tracks: Track[], header: Header): AsyncGenerator<MidiNote[], void, Error> {
+export async function* g24(
+  ticker: Ticker,
+  tracks: Track[],
+  header: Header
+): AsyncGenerator<MidiNote[], void, Error> {
   while (tracks.length) {
     let group = [];
     for (let i = 0; i < tracks.length; i++) {
@@ -18,7 +23,10 @@ export async function* g24(ticker: Ticker, tracks: Track[], header: Header): Asy
         const note = tracks[i].notes.shift();
         if (!note) continue;
         const midinote: MidiNote = {
-          instrument: tracks[i].instrument.name.replace(/\s/g, "_").replace("(", "").replace(")", ""),
+          instrument: tracks[i].instrument.name
+            .replace(/\s/g, "_")
+            .replace("(", "")
+            .replace(")", ""),
           midi: note.midi,
           trackId: i,
           measure: header.ticksToMeasures(note.ticks),
@@ -41,7 +49,11 @@ export async function* g24(ticker: Ticker, tracks: Track[], header: Header): Asy
   return;
 }
 
-export async function playMidi(filename, output, sampleRate = 9000, nChannels = 1): Promise<Readable> {
+export async function playMidi(
+  filename,
+  sampleRate = 9000,
+  nChannels = 1
+): Promise<Readable> {
   try {
     const { tracks, header } = new Midi(readFileSync(filename));
     const ctx = SSRContext.default;
@@ -51,11 +63,8 @@ export async function playMidi(filename, output, sampleRate = 9000, nChannels = 
     ticker.doTick();
     const g = g24(ticker, tracks, header);
     Readable.from(g)
-
       .pipe(new MidiToScheduledBuffer(ctx))
-      .pipe(ctx.aggregate);
-    // ctx.pipe(createWriteStream("333.wav"));
-    //.start();
+      .pipe(new AgggregateScheduledBuffer(ctx));
     return ctx;
   } catch (e) {
     console.error(e);

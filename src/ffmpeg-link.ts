@@ -12,7 +12,12 @@ export const castInput: CastFunction = () => {
   unlinkSync("input2");
   execSync("mkfifo input2");
   const pt = new PassThrough();
-  const ff = spawn("ffmpeg", `-debug-level=trace -i pipe:0 -re -f mulaw -f rtp rtp://127.0.0.1:1234`.split(" "));
+  const ff = spawn(
+    "ffmpeg",
+    `-debug-level=trace -i pipe:0 -re -f mulaw -f rtp rtp://127.0.0.1:1234`.split(
+      " "
+    )
+  );
   pt.pipe(ff.stdin);
 
   ff.on("error", console.error);
@@ -43,7 +48,8 @@ export function ffmpegToBuffer(args: string, ob: Buffer) {
   cspawnToBuffer(`ffmpeg`, args, ob);
 }
 
-export const mp3db = (inst: string, midi: number) => resolve(__dirname, "../db/", inst, `${midi}.mp3`);
+export const mp3db = (inst: string, midi: number) =>
+  resolve(__dirname, "../db/", inst, `${midi}.mp3`);
 
 export type CombinedNotes = {
   start: number;
@@ -56,13 +62,17 @@ export const combinemp3 = async (
   format: string,
   aoptions: string
 ): Promise<Buffer> => {
-  const cacheKey = combinedNote.midis.map((note) => `${note.instrument}${note.midi}`).join("_");
+  const cacheKey = combinedNote.midis
+    .map((note) => `${note.instrument}${note.midi}`)
+    .join("_");
 
   if (noteCache.cacheKeys.includes(cacheKey)) {
     return noteCache.read(cacheKey);
   }
 
-  const inputStr = combinedNote.midis.map((note) => `-i db/Fatboy_${note.instrument}/${note.midi}.mp3`).join(" ");
+  const inputStr = combinedNote.midis
+    .map((note) => `-i db/Fatboy_${note.instrument}/${note.midi}.mp3`)
+    .join(" ");
   const filterStr = `-filter_complex amix=inputs=${combinedNote.midis.length}`;
   const ob = noteCache.malloc(cacheKey);
   const cmd = `-y -hide_banner -loglevel panic ${inputStr} ${filterStr} -f ${format} ${aoptions} pipe:1`;

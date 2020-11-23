@@ -37,7 +37,7 @@ describe("ticker", () => {
       console.log(ticks, beat);
     });
     ticker.resume();
-
+    ticker.doTick();
     expect(ticker.ticks).to.equal(0);
 
     done();

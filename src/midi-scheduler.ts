@@ -4,15 +4,17 @@ import { MidiNote } from ".";
 import { Readable, Writable } from "stream";
 import { MidiToScheduledBuffer } from "./midi-transform-buffer";
 import { SSRContext } from "./ssrctx";
+import { Ticker } from "./ticker";
 
-export async function* g24(ctx: SSRContext, tracks: Track[], header: Header): AsyncGenerator<MidiNote[], void, Error> {
+export async function* g24(ticker: Ticker, tracks: Track[], header: Header): AsyncGenerator<MidiNote[], void, Error> {
   while (tracks.length) {
+    let group = [];
     for (let i = 0; i < tracks.length; i++) {
       if (!tracks[i].notes.length) {
-        // tracks = tracks.splice(i, 1);
+        tracks = tracks.splice(i, 1);
         continue;
       }
-      if (header.ticksToSeconds(tracks[i].notes[0].ticks) - ctx.currentTime < 50) {
+      while (tracks[i].notes[0].ticks <= ticker.measureInfo().endOfMeasure) {
         const note = tracks[i].notes.shift();
         if (!note) continue;
         const midinote: MidiNote = {
@@ -20,19 +22,19 @@ export async function* g24(ctx: SSRContext, tracks: Track[], header: Header): As
           midi: note.midi,
           trackId: i,
           measure: header.ticksToMeasures(note.ticks),
-          duration: header.ticksToSeconds(note.durationTicks),
+          duration: (ticker.msPerTick * note.durationTicks) / 1000,
           start: note.ticks,
           end: note.ticks + note.durationTicks,
           startTime: header.ticksToSeconds(note.ticks),
           endTime: header.ticksToSeconds(note.ticks + note.durationTicks),
         };
-        console.log(midinote.startTime, "vs", ctx.currentTime);
-        yield [midinote];
+        group.push(midinote);
+      }
+      if (group.length) {
+        yield group;
       }
       await new Promise((resolve) => {
-        // ctx.removeAllListeners("tick");
-        ctx.once("tick", resolve);
-        console.log(ctx.listeners("tick"));
+        ticker.once("measure", resolve);
       });
     }
   }
@@ -45,10 +47,15 @@ export async function playMidi(filename, output, sampleRate = 9000, nChannels = 
     const ctx = SSRContext.default;
     ctx.sampleRate = sampleRate;
     ctx.nChannels = nChannels;
-    const g = g24(ctx, tracks, header);
-    Readable.from(g).pipe(new MidiToScheduledBuffer(ctx)).pipe(ctx.aggregate);
+    const ticker = new Ticker(header);
+    ticker.doTick();
+    const g = g24(ticker, tracks, header);
+    Readable.from(g)
+
+      .pipe(new MidiToScheduledBuffer(ctx))
+      .pipe(ctx.aggregate);
     // ctx.pipe(createWriteStream("333.wav"));
-    ctx.start();
+    //.start();
     return ctx;
   } catch (e) {
     console.error(e);

@@ -58,7 +58,7 @@ export class SSRContext extends Readable {
     this.nChannels = nChannels;
     this.sampleRate = sampleRate;
     this.fps = sampleRate / 128 / 10;
-    this._frameNumber = -50;
+    this._frameNumber = 0;
     this.bitDepth = bitDepth;
     this.encoder = new Encoder(this.bitDepth);
     this.aggregate = new AgggregateScheduledBuffer(this);

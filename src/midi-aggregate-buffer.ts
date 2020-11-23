@@ -29,6 +29,9 @@ export class AgggregateScheduledBuffer extends Transform {
     const g = 1 / this.activeSources.size;
     const sums = new this.ctx.sampleArray(l).fill(0);
     for (const sbr of this.activeSources) {
+      if (!sbr.buffer && !sbr._getBuffer) {
+        process.exit();
+      }
       const b = sbr.pullFrame();
       for (let j in b) {
         sums[j] += b[j] * g;
@@ -43,7 +46,7 @@ export class AgggregateScheduledBuffer extends Transform {
   }
   join(srb: BaseAudioSource) {
     const startFrame = srb._start / this.ctx.secondsPerFrame;
-    console.log("new join", startFrame, "currentctx ", this.ctx.frameNumber);
+    console.log("new join", srb._start, "currentctx ", this.ctx.frameNumber);
     if (startFrame < this.ctx._frameNumber) {
       srb._start = this.ctx.currentTime;
       this.upcoming[0].push(srb);
@@ -52,8 +55,8 @@ export class AgggregateScheduledBuffer extends Transform {
       console.log(startFrame - this.ctx.frameNumber);
     }
   }
-  _transform(chunks: BufferSource[], _, cb) {
-    chunks.map((srb) => {
+  _transform(chunks: BufferSource, _, cb) {
+    [chunks].map((srb) => {
       if (!srb.buffer) cb(new Error("no buffer in aggre schedule transform " + srb.toString()));
       else {
         const startFrame = srb._start / this.ctx.secondsPerFrame;
